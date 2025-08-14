@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where mcp-context7)",
+      "Bash(where mcp-sequential)",
+      "Bash(docker-compose up:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(python -m pip install:*)",
+      "Bash(python:*)",
+      "Bash(npm run dev:*)",
+      "Bash(docker run:*)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm test:*)",
+      "Bash(npx playwright:*)",
+      "Bash(chmod:*)",
+      "Bash(gcloud:*)",
+      "Bash(bash:*)",
+      "Bash(echo:*)",
+      "Bash(docker build:*)",
+      "Bash(docker push:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

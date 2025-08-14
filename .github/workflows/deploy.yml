@@ -1,0 +1,125 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    
+  deploy-api:
+    runs-on: ubuntu-latest
+    needs: test
+    if: success()
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+    
+    - name: Configure Docker for GCR
+      run: gcloud auth configure-docker
+    
+    - name: Build API Docker image
+      run: |
+        cd api
+        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/sparkapp-api:${{ github.sha }} .
+        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/sparkapp-api:latest .
+    
+    - name: Push API Docker image
+      run: |
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/sparkapp-api:${{ github.sha }}
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/sparkapp-api:latest
+    
+    - name: Deploy API to Cloud Run
+      run: |
+        gcloud run deploy sparkapp-api \
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/sparkapp-api:${{ github.sha }} \
+          --platform managed \
+          --region us-central1 \
+          --allow-unauthenticated \
+          --set-env-vars="ENV=production" \
+          --set-env-vars="SPARK_ORG_NAME=${{ secrets.SPARK_ORG_NAME }}" \
+          --set-env-vars="SPARK_EIN=${{ secrets.SPARK_EIN }}" \
+          --set-env-vars="SPARK_ADDR=${{ secrets.SPARK_ADDR }}" \
+          --set-env-vars="EMAIL_PROVIDER=${{ secrets.EMAIL_PROVIDER }}" \
+          --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
+          --set-env-vars="POSTMARK_API_TOKEN=${{ secrets.POSTMARK_API_TOKEN }}" \
+          --memory 1Gi \
+          --cpu 1 \
+          --max-instances 10 \
+          --timeout 300
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: [test, deploy-api]
+    if: success()
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: web/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd web
+        npm ci --legacy-peer-deps
+    
+    - name: Deploy to Vercel
+      uses: amondnet/vercel-action@v25
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: ./web
+        vercel-args: '--prod'
+      env:
+        NEXT_PUBLIC_API_URL: ${{ secrets.API_URL }}
+
+  smoke-tests:
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-frontend]
+    if: success()
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install Playwright
+      run: |
+        cd web
+        npm ci --legacy-peer-deps
+        npx playwright install chromium
+    
+    - name: Run production smoke tests
+      run: |
+        cd web
+        npx playwright test --grep="should verify API health endpoint"
+      env:
+        PLAYWRIGHT_BASE_URL: ${{ secrets.FRONTEND_URL }}
+        API_BASE_URL: ${{ secrets.API_URL }}
+    
+    - name: Notify deployment status
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: 'Production deployment ${{ job.status }}'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

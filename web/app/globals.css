@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cream:#FEEECC; --peach-sand:#F0CFA8; --maize:#D4A986;
+  --tamarind-orange:#F19738; --chili-red:#D7430C;
+  --clay-umber:#B77850; --burnt-sienna:#8A4D31; --cacao-brown:#57180F;
+}
+
+html, body { 
+  @apply bg-[color:var(--cream)] text-[color:var(--cacao-brown)]; 
+}
+
+/* Enhanced card system */
+.card { 
+  @apply bg-white rounded-2xl shadow-soft border border-peach-sand; 
+}
+
+.badge { 
+  @apply inline-block px-3 py-1 rounded-full text-white bg-[color:var(--chili-red)] text-xs font-semibold; 
+}
+
+.kpi { 
+  @apply card p-4; 
+}
+
+/* Mobile-first responsive utilities */
+.mobile-stack {
+  @apply flex flex-col space-y-4 md:flex-row md:space-y-0 md:space-x-4;
+}
+
+.mobile-grid {
+  @apply grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+}
+
+.mobile-text {
+  @apply text-sm sm:text-base lg:text-lg;
+}
+
+.mobile-padding {
+  @apply p-4 sm:p-6 lg:p-8;
+}
+
+/* Touch-friendly interactive elements */
+.touch-target {
+  @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
+}
+
+.btn-primary {
+  @apply px-6 py-3 bg-tamarind-orange text-white rounded-lg font-medium
+         hover:bg-tamarind-orange/90 focus:outline-none focus:ring-2 
+         focus:ring-tamarind-orange/50 transition-colors touch-target;
+}
+
+.btn-secondary {
+  @apply px-6 py-3 bg-clay-umber text-white rounded-lg font-medium
+         hover:bg-clay-umber/90 focus:outline-none focus:ring-2 
+         focus:ring-clay-umber/50 transition-colors touch-target;
+}
+
+/* Improved focus states for accessibility */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-tamarind-orange focus:ring-opacity-50;
+}
+
+/* Mobile navigation */
+.mobile-nav {
+  @apply flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-4;
+}
+
+.mobile-nav a {
+  @apply block py-2 px-3 text-center rounded-lg hover:bg-white/20 
+         transition-colors focus-ring;
+}
+
+/* Responsive typography scale */
+.heading-xl { @apply text-2xl sm:text-3xl lg:text-4xl font-bold; }
+.heading-lg { @apply text-xl sm:text-2xl lg:text-3xl font-semibold; }
+.heading-md { @apply text-lg sm:text-xl lg:text-2xl font-semibold; }
+.heading-sm { @apply text-base sm:text-lg font-medium; }
+
+/* Loading states */
+.skeleton {
+  @apply animate-pulse bg-gray-200 rounded;
+}
+
+/* Print styles */
+@media print {
+  .no-print { display: none !important; }
+  .print-friendly { 
+    @apply bg-white text-black; 
+    box-shadow: none !important;
+  }
+}
