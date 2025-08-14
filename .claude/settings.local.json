@@ -22,7 +22,8 @@
       "Bash(docker push:*)",
       "Bash(git add:*)",
       "Bash(git rm:*)",
-      "Bash(git filter-branch:*)"
+      "Bash(git filter-branch:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \"git rm --cached --ignore-unmatch -r web/node_modules web/.next\" --prune-empty --tag-name-filter cat -- --all)"
     ],
     "deny": [],
     "ask": []
