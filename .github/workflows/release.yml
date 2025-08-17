@@ -217,48 +217,29 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           CHANNEL: ${{ needs.notify-start.outputs.channel }}
           THREAD_TS: ${{ needs.notify-start.outputs.thread_ts }}
         run: |
-          if [ -z "${SLACK_BOT_TOKEN}" ] || [ -z "${SLACK_CHANNEL_ID}" ]; then
-            echo "No Slack bot token/channel; skipping success notify."
-            exit 0
-          fi
           text=":white_check_mark: *${REPO}* deployed *${TAG}* and passed health checks."
-          if [ -n "${THREAD_TS}" ] && [ -n "${CHANNEL}" ]; then
-            body=$(jq -n --arg ch "$CHANNEL" --arg ts "$THREAD_TS" --arg t "$text" '{channel:$ch,text:$t,thread_ts:$ts,unfurl_links:false}')
+          if [ -n "${SLACK_BOT_TOKEN}" ] && [ -n "${SLACK_CHANNEL_ID}" ]; then
+            if [ -n "${THREAD_TS}" ] && [ -n "${CHANNEL}" ]; then
+              body=$(jq -n --arg ch "$CHANNEL" --arg ts "$THREAD_TS" --arg t "$text" '{channel:$ch,text:$t,thread_ts:$ts,unfurl_links:false}')
+            else
+              body=$(jq -n --arg ch "$SLACK_CHANNEL_ID" --arg t "$text" '{channel:$ch,text:$t,unfurl_links:false}')
+            fi
+            curl -s -X POST "https://slack.com/api/chat.postMessage" \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-type: application/json; charset=utf-8" \
+              --data "$body" >/dev/null
+          elif [ -n "${SLACK_WEBHOOK}" ]; then
+            payload=$(jq -n --arg t "$text" '{text:$t}')
+            curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" >/dev/null
           else
-            body=$(jq -n --arg ch "$SLACK_CHANNEL_ID" --arg t "$text" '{channel:$ch,text:$t,unfurl_links:false}')
+            echo "No Slack creds; skipping success notify."
           fi
-          curl -s -X POST "https://slack.com/api/chat.postMessage" \
-            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
-            -H "Content-type: application/json; charset=utf-8" \
-            --data "$body" >/dev/null
 
-  slack-release:
-    name: Slack notify
-    needs: [api-release, deploy]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Post to Slack (Incoming Webhook)
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if [ -z "${SLACK_WEBHOOK}" ]; then
-            echo "No SLACK_WEBHOOK set; skipping Slack notify."
-            exit 0
-          fi
-          payload=$(cat <<JSON
-          {
-            "text": ":rocket: *${REPO}* deployed *${TAG}* to *production*.\n• Release: https://github.com/${REPO}/releases/tag/${TAG}\n• Image: ghcr.io/${REPO%/*}/spark-api:${TAG}"
-          }
-          JSON
-          )
-          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" >/dev/null
 
 
