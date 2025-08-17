@@ -1,4 +1,10 @@
 /** @type {import('next').NextConfig} */
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+const { withSentryConfig } = require('@sentry/nextjs');
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+
 const nextConfig = {
   // Optimize build performance
   swcMinify: true,
@@ -17,6 +23,13 @@ const nextConfig = {
   
   // Webpack optimizations
   webpack: (config, { dev, isServer }) => {
+    // When ANALYZE is enabled, also emit stats.json for CI budget check
+    if (process.env.ANALYZE === 'true') {
+      config.plugins = config.plugins || [];
+      config.plugins.push(
+        new BundleAnalyzerPlugin({ analyzerMode: 'disabled', generateStatsFile: true, statsFilename: 'stats.json' })
+      );
+    }
     // Optimize bundle splitting
     if (!dev && !isServer) {
       config.optimization.splitChunks = {
@@ -48,4 +61,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), { silent: true });

@@ -1,12 +1,33 @@
 version: "3.9"
 services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_DB=sparkapp
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d sparkapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:6-alpine
-    ports: ["6379:6379"]
+    ports: ["6380:6379"]
+    restart: always
+
   api:
     build: ./api
     environment:
       - ENV=local
+      - DATABASE_URL=postgresql://user:password@db:5432/sparkapp
+      - REDIS_HOST=redis
       - EMAIL_PROVIDER=sendgrid
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}
       - DATA_DIR=/app/data
@@ -15,12 +36,43 @@ services:
       - SPARK_ADDR=${SPARK_ADDR}
       - SPARK_VERIFY_BASE_URL=${SPARK_VERIFY_BASE_URL}
       - SPARK_LOGO_PATH=/app/assets/logo.png
+      - PYTHONUNBUFFERED=1
+      - UVICORN_WORKERS=2
     ports: ["8080:8080"]
-    depends_on: ["redis"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   web:
     build: ./web
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
       - NEXT_PUBLIC_BRAND_NAME=SparkCreatives Inc.
     ports: ["3000:3000"]
-    depends_on: ["api"]
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
-from models import Donation
+from models import Donation, DataRoomDocument
+from collections import defaultdict
 
 router = APIRouter()
 
@@ -43,10 +44,21 @@ def get_reviewer_metrics(db: Session = Depends(get_db)):
     }
 
 @router.get("/data-room")
-def get_data_room_index():
-    # TODO: Replace with actual data from a storage bucket or database
-    return [
-        {"folder": "governance", "items": ["IRS Letter.pdf", "FDACS Registration.pdf"]},
-        {"folder": "policies", "items": ["Donor Privacy Policy.pdf", "Conflict of Interest Policy.pdf"]},
-        {"folder": "financials", "items": ["Budget Summary FY2025.pdf"]},
+def get_data_room_index(db: Session = Depends(get_db)):
+    """
+    Retrieves a structured list of data room documents from the database.
+    """
+    documents = db.query(DataRoomDocument).order_by(DataRoomDocument.folder, DataRoomDocument.file_name).all()
+    
+    # Group documents by folder
+    folder_map = defaultdict(list)
+    for doc in documents:
+        folder_map[doc.folder].append(doc.file_name)
+        
+    # Format the output to match the expected structure
+    data_room_index = [
+        {"folder": folder_name, "items": files}
+        for folder_name, files in folder_map.items()
     ]
+    
+    return data_room_index

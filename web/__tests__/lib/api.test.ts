@@ -266,9 +266,10 @@ describe('API Library', () => {
     });
 
     it('handles missing document.createElement', async () => {
-      const originalCreateElement = document.createElement;
-      // @ts-ignore
-      delete document.createElement;
+      const original = document.createElement;
+      const spy = jest.spyOn(document, 'createElement' as any).mockImplementation(() => {
+        throw new Error('not implemented');
+      });
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -277,11 +278,9 @@ describe('API Library', () => {
 
       await expect(downloadReceipt('NODOM123')).rejects.toThrow();
 
-      // Restore
-      Object.defineProperty(document, 'createElement', {
-        value: originalCreateElement,
-        writable: true,
-      });
+      spy.mockRestore();
+      // Ensure it restored
+      expect(document.createElement).toBe(original);
     });
   });
 });

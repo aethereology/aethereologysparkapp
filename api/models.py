@@ -37,3 +37,13 @@ class Donation(Base):
     designation_breakdown = Column(String)
 
     donor = relationship("Donor", back_populates="donations")
+
+class DataRoomDocument(Base):
+    __tablename__ = 'data_room_documents'
+
+    id = Column(String, primary_key=True)
+    folder = Column(String, nullable=False)
+    file_name = Column(String, nullable=False)
+    # In a real scenario, this would be a URL to a cloud storage bucket
+    file_path = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default='now()')

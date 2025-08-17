@@ -91,24 +91,72 @@ jobs:
           set -euo pipefail
           cd "${DEPLOY_PATH}"
 
-          # Ensure GHCR login for pulls (PAT with write:packages or read:packages)
+          # Previous deployed tag (defaults to 'latest' if missing)
+          PREV_TAG="latest"
+          if [ -f .env ] && grep -q '^IMAGE_TAG=' .env; then
+            PREV_TAG=$(grep '^IMAGE_TAG=' .env | cut -d= -f2-)
+          fi
+          echo "Previous tag: ${PREV_TAG}"
+
+          # Optional: GHCR login for pulling private images
           if [ -n "${GHCR_PAT:-}" ] && [ -n "${GHCR_USERNAME:-}" ]; then
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           fi
 
-          # Update .env IMAGE_TAG and OWNER atomically
+          # Atomically set OWNER and new IMAGE_TAG
           touch .env
-          grep -q '^OWNER=' .env && sed -i "s/^OWNER=.*/OWNER=${OWNER}/" .env || echo "OWNER=${OWNER}" >> .env
-          grep -q '^IMAGE_TAG=' .env && sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${TAG}/" .env || echo "IMAGE_TAG=${TAG}" >> .env
+          if grep -q '^OWNER=' .env; then sed -i "s/^OWNER=.*/OWNER=${OWNER}/" .env; else echo "OWNER=${OWNER}" >> .env; fi
+          if grep -q '^IMAGE_TAG=' .env; then sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${TAG}/" .env; else echo "IMAGE_TAG=${TAG}" >> .env; fi
 
-          # Pull & restart only the api service
+          # Deploy new version
           docker compose pull api
           docker compose up -d api
           docker compose ps api
 
-          # Quick health check
-          curl -sf http://localhost:8080/health >/dev/null || { echo "Health check failed"; exit 1; }
+          # Health check with retries (≈60s)
+          ok=0
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8080/health >/dev/null; then ok=1; break; fi
+            sleep 3
+          done
+
+          # Auto-rollback on failure
+          if [ "$ok" -ne 1 ]; then
+            echo "❌ Health check failed. Rolling back to ${PREV_TAG}..."
+            if grep -q '^IMAGE_TAG=' .env; then sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${PREV_TAG}/" .env; else echo "IMAGE_TAG=${PREV_TAG}" >> .env; fi
+            docker compose pull api
+            docker compose up -d api
+            docker compose ps api
+            # Exit non-zero so the CI shows a failed deploy (Slack failure job will notify)
+            exit 32
+          fi
+
+          echo "✅ Deploy healthy."
           EOSH
+
+  slack-deploy-failure:
+    name: Slack notify (deploy failed)
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post Slack failure message
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK}" ]; then
+            echo "No SLACK_WEBHOOK configured; skipping failure notify."
+            exit 0
+          fi
+          payload=$(cat <<JSON
+          {
+            "text": ":warning: *${REPO}* deploy of *${TAG}* failed health check and was auto-rolled back. Investigate CI logs & Grafana."
+          }
+          JSON
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" >/dev/null
 
   slack-release:
     name: Slack notify

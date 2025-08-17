@@ -151,7 +151,7 @@ test.describe('Donation Receipt Workflow', () => {
     await expect(viewButton).toBeDisabled();
     
     // Wait for loading to complete
-    await expect(page.locator('text=/loading/i')).toHidden();
+    await expect(page.locator('text=/loading/i')).toBeHidden();
     await expect(viewButton).toBeEnabled();
   });
 
@@ -178,7 +178,7 @@ test.describe('Donation Receipt Workflow', () => {
     await input.fill('NEW123');
     
     // Error message should be gone
-    await expect(page.locator('text=/error.*not found/i')).toHidden();
+    await expect(page.locator('text=/error.*not found/i')).toBeHidden();
   });
 
   test('should be responsive on mobile devices', async ({ page }) => {
@@ -309,7 +309,7 @@ test.describe('Error Handling and Edge Cases', () => {
     await viewButton.click();
     
     // Error message should be safely escaped
-    await expect(page.locator('text=/<script>/i')).toHidden();
+    await expect(page.locator('text=/<script>/i')).toBeHidden();
     // But error should still be shown
     await expect(page.locator('text=/error/i')).toBeVisible();
   });

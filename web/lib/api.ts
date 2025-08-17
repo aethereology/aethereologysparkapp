@@ -1,6 +1,7 @@
 import { ReviewerMetrics, DataRoomFolder, ReceiptEmailResponse } from '@/types/api';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+export const API_BASE_URL = API_URL;
 
 // Custom error class for API errors
 export class ApiError extends Error {
@@ -59,6 +60,60 @@ export async function getReceiptPdf(donationId: string): Promise<ArrayBuffer> {
   return await response.arrayBuffer();
 }
 
+// Downloads receipt PDF by triggering a browser download
+export async function downloadReceipt(donationId: string): Promise<void> {
+  const id = donationId?.trim();
+  if (!id) {
+    throw new Error('Invalid donation ID');
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/donations/${encodeURIComponent(id)}/receipt.pdf`);
+
+    if (!response || !response.ok) {
+      let detailMessage: string | null = null;
+      try {
+        const data = await response?.json();
+        if (data && typeof data === 'object' && 'detail' in data && typeof (data as any).detail === 'string') {
+          detailMessage = (data as any).detail as string;
+        }
+      } catch {
+        // ignore parsing errors
+      }
+      if (detailMessage) {
+        throw new Error(detailMessage);
+      }
+      throw new Error(`HTTP error! status: ${response ? response.status : 'unknown'}`);
+    }
+
+    const blob = await response.blob();
+
+    if (!globalThis.URL || typeof globalThis.URL.createObjectURL !== 'function') {
+      throw new Error('URL.createObjectURL is not available');
+    }
+
+    const objectUrl = globalThis.URL.createObjectURL(blob);
+
+    if (!document || typeof document.createElement !== 'function') {
+      throw new Error('DOM is not available to create download link');
+    }
+
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `receipt-${id}.pdf`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    globalThis.URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    if (err instanceof Error) {
+      throw err;
+    }
+    throw new Error('Unknown error');
+  }
+}
+
 export async function getStatementPdf(donorId: string, year: number): Promise<ArrayBuffer> {
   if (!donorId?.trim()) {
     throw new ApiError(400, 'Donor ID is required');
@@ -100,13 +155,43 @@ export async function getReviewerMetrics(org: string): Promise<ReviewerMetrics> 
 
 // Send receipt via email
 export async function sendReceiptEmail(donationId: string): Promise<ReceiptEmailResponse> {
-  if (!donationId?.trim()) {
-    throw new ApiError(400, 'Donation ID is required');
+  const id = donationId?.trim();
+  if (!id) {
+    throw new Error('Invalid donation ID');
   }
-  
-  return await apiCall<ReceiptEmailResponse>(`${API_URL}/api/v1/donations/${donationId}/receipt`, {
-    method: 'POST'
-  });
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/donations/${encodeURIComponent(id)}/receipt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      let detailMessage: string | null = null;
+      try {
+        const data = await response.json();
+        if (data && typeof data === 'object' && 'detail' in data && typeof (data as any).detail === 'string') {
+          detailMessage = (data as any).detail as string;
+        }
+      } catch {
+        // ignore parsing errors
+      }
+      if (detailMessage) {
+        throw new Error(detailMessage);
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // May return { sent: boolean, recipient?: string } or null
+    return await response.json();
+  } catch (err) {
+    if (err instanceof Error) {
+      throw err;
+    }
+    throw new Error('Unknown error');
+  }
 }
 
 // Health check endpoint

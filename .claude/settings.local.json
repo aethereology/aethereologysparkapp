@@ -23,9 +23,23 @@
       "Bash(git add:*)",
       "Bash(git rm:*)",
       "Bash(git filter-branch:*)",
-      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \"git rm --cached --ignore-unmatch -r web/node_modules web/.next\" --prune-empty --tag-name-filter cat -- --all)"
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \"git rm --cached --ignore-unmatch -r web/node_modules web/.next\" --prune-empty --tag-name-filter cat -- --all)",
+      "Bash(npm audit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(cat:*)",
+      "Bash(set -a)",
+      "Bash(source:*)",
+      "Bash(set +a)",
+      "Bash(GHCR_USER=\"aethereology\")"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "C:\\Users\\kylel\\Desktop\\sparkapp2\\aethereologysparkapp\\web",
+      "C:\\Users\\kylel\\Desktop\\sparkapp2\\aethereologysparkapp"
+    ]
   }
 }

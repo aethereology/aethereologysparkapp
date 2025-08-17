@@ -1,16 +1,18 @@
 import logging
 import re
-from fastapi import APIRouter, HTTPException, Response, Path, Depends
+from fastapi import APIRouter, HTTPException, Response, Path, Depends, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 from services.receipts import find_donation, find_donor, generate_receipt_pdf, line_items_from_row
 from services.emailer import send_email
 from database import get_db
 from models import Donor
+from auth import optional_auth, require_api_key
 
 logger = logging.getLogger(__name__)
 
 # Input validation patterns
-DONATION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,50}$_)
+DONATION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,50}$')
 
 def validate_donation_id(donation_id: str) -> str:
     """Validate donation ID format to prevent injection attacks.""" 
@@ -26,10 +28,22 @@ def _pdf_response(pdf: bytes, filename: str):
 
 @router.get("/donations/{donation_id}/receipt.pdf")
 def get_receipt(
-    donation_id: str = Path(..., description="Unique donation identifier", regex=r'^[A-Za-z0-9_-]{1,50}$_),
-    db: Session = Depends(get_db)
+    donation_id: str = Path(..., description="Unique donation identifier", regex=r'^[A-Za-z0-9_-]{1,50}$'),
+    db: Session = Depends(get_db),
+    x_api_key: Optional[str] = Header(None),
+    user: Optional[dict] = Depends(optional_auth)
 ):
     """Generate and return a PDF receipt for a donation.""" 
+    # Authentication check - require either API key or valid user token
+    if not user and not x_api_key:
+        raise HTTPException(401, "Authentication required - provide API key or valid token")
+    
+    if x_api_key:
+        require_api_key(x_api_key)
+        logger.info(f"Receipt access via API key for donation {donation_id}")
+    elif user:
+        logger.info(f"Receipt access by user {user.get('user_id')} for donation {donation_id}")
+    
     try:
         dn = find_donation(db, donation_id)
         if not dn:
@@ -70,10 +84,22 @@ def get_receipt(
 
 @router.post("/donations/{donation_id}/receipt")
 def send_receipt(
-    donation_id: str = Path(..., description="Unique donation identifier", regex=r'^[A-Za-z0-9_-]{1,50}$_),
-    db: Session = Depends(get_db)
+    donation_id: str = Path(..., description="Unique donation identifier", regex=r'^[A-Za-z0-9_-]{1,50}$'),
+    db: Session = Depends(get_db),
+    x_api_key: Optional[str] = Header(None),
+    user: Optional[dict] = Depends(optional_auth)
 ):
     """Send a receipt via email for a donation.""" 
+    # Authentication check - require either API key or valid user token
+    if not user and not x_api_key:
+        raise HTTPException(401, "Authentication required - provide API key or valid token")
+    
+    if x_api_key:
+        require_api_key(x_api_key)
+        logger.info(f"Receipt email via API key for donation {donation_id}")
+    elif user:
+        logger.info(f"Receipt email by user {user.get('user_id')} for donation {donation_id}")
+    
     try:
         dn = find_donation(db, donation_id)
         if not dn:
