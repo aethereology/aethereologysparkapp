@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write       # create release
+  packages: write       # push GHCR images
+
+jobs:
+  api-release:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: spark-api
+      REGISTRY: ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive metadata
+        id: meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+          echo "version=${GITHUB_REF_NAME}"        >> $GITHUB_OUTPUT
+          echo "sha=${GITHUB_SHA}"                 >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.meta.outputs.version }}" --generate-notes || \
+          gh release edit   "${{ steps.meta.outputs.version }}" --notes-start-tag "${{ steps.meta.outputs.version }}"
+
+  deploy:
+    name: Deploy via SSH (Compose host)
+    needs: api-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Derive release vars
+        id: meta
+        run: |
+          echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Remote deploy (update IMAGE_TAG and restart api)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          TAG: ${{ steps.meta.outputs.TAG }}
+          OWNER: ${{ steps.meta.outputs.OWNER }}
+        run: |
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'EOSH'
+          set -euo pipefail
+          cd "${DEPLOY_PATH}"
+
+          # Ensure GHCR login for pulls (PAT with write:packages or read:packages)
+          if [ -n "${GHCR_PAT:-}" ] && [ -n "${GHCR_USERNAME:-}" ]; then
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          fi
+
+          # Update .env IMAGE_TAG and OWNER atomically
+          touch .env
+          grep -q '^OWNER=' .env && sed -i "s/^OWNER=.*/OWNER=${OWNER}/" .env || echo "OWNER=${OWNER}" >> .env
+          grep -q '^IMAGE_TAG=' .env && sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${TAG}/" .env || echo "IMAGE_TAG=${TAG}" >> .env
+
+          # Pull & restart only the api service
+          docker compose pull api
+          docker compose up -d api
+          docker compose ps api
+
+          # Quick health check
+          curl -sf http://localhost:8080/health >/dev/null || { echo "Health check failed"; exit 1; }
+          EOSH
+
+  slack-release:
+    name: Slack notify
+    needs: [api-release, deploy]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack (Incoming Webhook)
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK}" ]; then
+            echo "No SLACK_WEBHOOK set; skipping Slack notify."
+            exit 0
+          fi
+          payload=$(cat <<JSON
+          {
+            "text": ":rocket: *${REPO}* deployed *${TAG}* to *production*.\n• Release: https://github.com/${REPO}/releases/tag/${TAG}\n• Image: ghcr.io/${REPO%/*}/spark-api:${TAG}"
+          }
+          JSON
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" >/dev/null
+
+
